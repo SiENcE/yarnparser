@@ -3,7 +3,7 @@ A Yarn parser written in Lua to convert Yarn Spinner dialogues into Lua structur
 
 ## Overview
 
-This Lua module provides a parser for Yarn scripts, which are commonly used in interactive narrative games. The parser can handle various elements of Yarn syntax, including dialogue, choices, conditional statements, variable assignments, and comments.
+This Lua module provides a parser for Yarn scripts, which are commonly used in interactive narrative games. The parser can handle various elements of Yarn syntax, including dialogue, choices, conditional statements, variable assignments, and commands.
 
 ## Features
 
@@ -12,9 +12,9 @@ This Lua module provides a parser for Yarn scripts, which are commonly used in i
   - Dialogue lines
   - Choices (including nested choices)
   - Conditional statements (if/else)
-  - Variable assignments and declarations
+  - Variable assignments, declarations, and interpolation
+  - Commands (including jump, set, declare)
   - Comments (single-line and multi-line)
-  - Jump commands
 - Grouping of related content (e.g., choices and their responses)
 - Ability to find dialogue preceding choice groups
 
@@ -28,10 +28,23 @@ local script = [[
 title: Start
 ---
 Player: Hello, world!
+
+<<declare $goldAmount = 100>>
+<<set $health to 100>>
+Your health is {$health}.
 -> Choice 1
-    NPC: You chose 1
+    NPC: You chose {$goldAmount}.
+    <<set $health to 50>>
 -> Choice 2
-    NPC: You chose 2
+    NPC: Your health is {$health}.
+
+// Test
+
+<<if $health > 50>>
+    You're doing well!
+<<else>>
+    You might want to heal up.
+<<endif>>
 ===
 ]]
 
@@ -44,24 +57,24 @@ local function print_content(content, indent)
         if item.type == "dialogue" then
             print(indent .. item.text)
         elseif item.type == "choice" then
-            print(indent .. "    -> " .. item.text)
+            print(indent .. "-> " .. item.text)
             print_content(item.response, indent .. "  ")
         elseif item.type == "set" then
-            print(indent .. "Set: " .. item.variable .. " to " .. item.value)
+            print(indent .. "<<set " .. item.variable .. " to " .. item.value .. ">>")
         elseif item.type == "conditional" then
-            print(indent .. "If: " .. item.condition)
-            print(indent .. "Then:")
+            print(indent .. "<<if " .. item.condition .. ">>")
             print_content(item.if_block, indent .. "  ")
             if #item.else_block > 0 then
-                print(indent .. "Else:")
+                print(indent .. "<<else>>")
                 print_content(item.else_block, indent .. "  ")
             end
+            print(indent .. "<<endif>>")
         elseif item.type == "jump" then
-            print(indent .. "Jump to: " .. item.target)
+            print(indent .. "<<jump " .. item.target .. ">>")
         elseif item.type == "declare" then
-            print(indent .. "Declare: " .. item.variable .. " = " .. item.value)
+            print(indent .. "<<declare " .. item.variable .. " as " .. item.type .. ">>")
         elseif item.type == "comment" then
-            print(indent .. "Comment: " .. item.text)
+            print(indent .. "// " .. item.text)
         else
             print(indent .. "Unknown type: " .. tostring(item.type))
         end
@@ -71,20 +84,16 @@ end
 -- Print the parsed structure
 if parsed_nodes then
     for i, node in ipairs(parsed_nodes) do
-        print("Node: " .. node.title)
-        print_content(node.content, "  ")
+        print("title: " .. node.title)
+        print("---")
+        print_content(node.content)
+        print("===")
         print("") -- Empty line between nodes for readability
     end
 end
 ```
 
 ## API
-
-## Yarn Syntax
-
-I reverse-engineered the syntax, including its EBNF representation, because I couldn't find a technical API description for Yarn.
-
-please refer to [Yarn syntax syntax](yarn_syntax.md)
 
 ### YarnParser:parse(script)
 
@@ -107,14 +116,88 @@ Each parsed node has the following structure:
 
 ```lua
 {
-    title = "Node Title",
-    content = {
-        -- Array of content objects (dialogue, choices, conditionals, etc.)
-    }
+	"title": "Start",
+	"content": [
+		{
+			"type": "dialogue",
+			"text": "Player: Hello, world!"
+		},
+		{
+			"variable": "goldAmount",
+			"type": "declare",
+			"value": "100"
+		},
+		{
+			"variable": "health",
+			"type": "set",
+			"value": "100"
+		},
+		{
+			"type": "dialogue",
+			"text": "Your health is {$health}."
+		},
+		{
+			"response": [
+				{
+					"type": "dialogue",
+					"text": "    NPC: You chose {$goldAmount}."
+				},
+				{
+					"variable": "health",
+					"type": "set",
+					"value": "50"
+				}
+			],
+			"indent": 0,
+			"type": "choice",
+			"text": "Choice 1"
+		},
+		{
+			"response": [
+				{
+					"type": "dialogue",
+					"text": "    NPC: Your health is {$health}."
+				},
+				{
+					"type": "comment",
+					"text": " Test"
+				},
+				{
+					"condition": "$health > 50",
+					"type": "conditional",
+					"if_block": [
+						{
+							"type": "dialogue",
+							"text": "    You're doing well!"
+						}
+					],
+					"current_block": [
+						{
+							"type": "dialogue",
+							"text": "    You might want to heal up."
+						}
+					],
+					"else_block": [
+						{
+							"type": "dialogue",
+							"text": "    You might want to heal up."
+						}
+					]
+				}
+			],
+			"indent": 0,
+			"type": "choice",
+			"text": "Choice 2"
+		}
+	]
 }
 ```
 
 Content objects can be of various types, including "dialogue", "choice", "conditional", "set", "declare", "jump", and "comment".
+
+## Yarn Syntax
+
+For a detailed description of the Yarn syntax, please refer to [Yarn syntax description](yarn_syntax.md).
 
 ## Limitations
 

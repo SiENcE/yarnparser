@@ -58,11 +58,12 @@ Choices present the player with options that branch the narrative. They are writ
 Variables store data that affects dialogue flow or choices. Variables start with `$` and can be declared, assigned values, or used in expressions.
 
 #### Variable Declaration and Assignment:
-- **Command**: `<<set $<VariableName> to <Value>>>`
+- **Command**: `<<declare $<VariableName> = <Type>>>`
 - **Example**:
   ```yarn
-  <<set $name to "Yarn">>
-  <<set $gold to 5>>
+  <<declare $health = Number>>
+  <<declare $playerName = String>>
+  <<declare $playerAlive = Boolean>>
   ```
 
 #### Variable Usage (Interpolation):
@@ -101,6 +102,13 @@ Commands allow interaction with the game or the script engine. They are written 
 #### Common Commands:
 - `<<jump <NodeName>>>`: Jump to another node.
 - `<<set $<VariableName> to <Value>>>`: Assign a value to a variable.
+- `<<declare $<VariableName> = <Type>>>`: Declare a variable with a specific type.
+
+Example of declare:
+```yarn
+<<declare $health = 50>>
+<<set $health to 100>>
+```
 
 ### 7. **Comments**
 
@@ -112,6 +120,18 @@ Comments are used for annotating the script and are ignored by the interpreter. 
   ```yarn
   // Comments start with two slashes, and won't show up in your conversation.
   ```
+  
+#### Multi-line Comment (added, it's not in the original yarn syntax):
+- **Syntax**: ```/* ..
+                  .. */```
+- **Example**:
+  ```yarn
+  /*
+  Comments start with two slashes,
+  and won't show up in your conversation.
+  */
+  ```
+Multi-line Comments: The Comment rule now includes support for multi-line comments, using the /* and */ delimiters. NOTE: It's not originally in the yarn syntax!
 
 ### 8. **Node Jumping**
 
@@ -147,13 +167,21 @@ Dialogue  ::= PlainText ;
 Choice    ::= "->" ChoiceText (Dialogue | Choice)* ;
 Command   ::= "<<" CommandText ">>" ;
 Conditional ::= "<<if" Condition ">>" Content ("<<else>>" Content)? "<<endif>>" ;
-Comment   ::= "//" CommentText ;
+Comment   ::= "//" CommentText | "/*" MultiLineComment "*/" ;
+MultiLineComment ::= .* ;
 PlainText ::= .+ ;  // Any printable character or whitespace
 ChoiceText ::= .+ ;  // Text following the choice arrow
-CommandText ::= [A-Za-z_][A-Za-z0-9_]* (" " .+)? ;  // Command name followed by optional parameters
+CommandText ::= ("set" | "jump" | "declare") Argument* ;  // Command name followed by optional arguments
+Argument  ::= [A-Za-z_][A-Za-z0-9_]* | String ;
 Condition ::= Expression ;
 Content   ::= (Dialogue | Choice | Command | Conditional | Comment)* ;
-Expression ::= ... ; // Expressions for conditions and variable assignments
+Expression ::= Identifier | Number | Boolean | Operator Expression* ;
+Identifier ::= [A-Za-z_][A-Za-z0-9_]* ;
+Number    ::= [0-9]+ | [0-9]*\.[0-9]+ ;
+Boolean   ::= "true" | "false" ;
+Operator  ::= "+" | "-" | "*" | "/" | ">" | "<" | ">=" | "<=" | "==" | "!=" | "and" | "or" | "not" ;
+String    ::= "\"" .* "\"" ;
+StringInterpolation ::= "{" "$" Identifier "}" ;
 ```
 
 This updated syntax description reflects the structure and features demonstrated in the provided Yarn Script examples.
