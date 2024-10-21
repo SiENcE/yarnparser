@@ -121,6 +121,10 @@ Content objects can be of various types, including "dialogue", "choice", "condit
 - The parser assumes well-formed Yarn syntax. Malformed scripts may lead to unexpected results.
 - Complex nested structures (e.g., conditionals within choices within conditionals) may not be handled perfectly and might require additional processing.
 
+## Author
+
+Florian Fischer ( https://github.com/SiENcE )
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

@@ -157,3 +157,8 @@ Expression ::= ... ; // Expressions for conditions and variable assignments
 ```
 
 This updated syntax description reflects the structure and features demonstrated in the provided Yarn Script examples.
+
+
+## Author
+
+Florian Fischer ( https://github.com/SiENcE )
