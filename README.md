@@ -1,5 +1,5 @@
 # Yarn Parser
-Yarn Parser written in Lua to read yarn spinner dialogues into lua structures.
+A Yarn parser written in Lua to convert Yarn Spinner dialogues into Lua structures.
 
 ## Overview
 
