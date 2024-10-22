@@ -23,7 +23,6 @@ This Lua module provides a parser for Yarn scripts, which are commonly used in i
 ```lua
 local YarnParser = require("yarn_parser")
 
--- Parse a Yarn script
 local script = [[
 title: Start
 ---
@@ -32,10 +31,10 @@ Player: Hello, world!
 <<declare $goldAmount = 100>>
 <<set $health to 100>>
 Your health is {$health}.
--> Choice 1
-    NPC: You chose {$goldAmount}.
+-> Choose gold, instead of health.
+    NPC: You chose {$goldAmount} gold.
     <<set $health to 50>>
--> Choice 2
+-> Choose health.
     NPC: Your health is {$health}.
 
 // Test
@@ -45,10 +44,16 @@ Your health is {$health}.
 <<else>>
     You might want to heal up.
 <<endif>>
+
+<<jump TEST>>
+
+Jump does not work.
+===
+title: TEST
+---
+Jump does work.
 ===
 ]]
-
-local parsed_nodes = YarnParser:parse(script)
 
 -- Function to print the content of a node
 local function print_content(content, indent)
@@ -57,37 +62,37 @@ local function print_content(content, indent)
         if item.type == "dialogue" then
             print(indent .. item.text)
         elseif item.type == "choice" then
-            print(indent .. "-> " .. item.text)
+            print(indent .. "    -> " .. item.text)
             print_content(item.response, indent .. "  ")
         elseif item.type == "set" then
-            print(indent .. "<<set " .. item.variable .. " to " .. item.value .. ">>")
+            print(indent .. "Set: " .. item.variable .. " to " .. item.value)
         elseif item.type == "conditional" then
-            print(indent .. "<<if " .. item.condition .. ">>")
+            print(indent .. "If: " .. item.condition)
+            print(indent .. "Then:")
             print_content(item.if_block, indent .. "  ")
             if #item.else_block > 0 then
-                print(indent .. "<<else>>")
+                print(indent .. "Else:")
                 print_content(item.else_block, indent .. "  ")
             end
-            print(indent .. "<<endif>>")
         elseif item.type == "jump" then
-            print(indent .. "<<jump " .. item.target .. ">>")
+            print(indent .. "Jump to: " .. item.target)
         elseif item.type == "declare" then
-            print(indent .. "<<declare " .. item.variable .. " as " .. item.type .. ">>")
+            print(indent .. "Declare: " .. item.variable .. " = " .. item.value)
         elseif item.type == "comment" then
-            print(indent .. "// " .. item.text)
+            print(indent .. "Comment: " .. item.text)
         else
             print(indent .. "Unknown type: " .. tostring(item.type))
         end
     end
 end
 
+local parsed_nodes = YarnParser:parse(script)
+
 -- Print the parsed structure
 if parsed_nodes then
     for i, node in ipairs(parsed_nodes) do
-        print("title: " .. node.title)
-        print("---")
-        print_content(node.content)
-        print("===")
+        print("Node: " .. node.title)
+        print_content(node.content, "  ")
         print("") -- Empty line between nodes for readability
     end
 end
@@ -115,82 +120,109 @@ Finds the dialogue immediately preceding a choice group within a node.
 Each parsed node has the following structure:
 
 ```lua
-{
-	"title": "Start",
-	"content": [
-		{
-			"type": "dialogue",
-			"text": "Player: Hello, world!"
-		},
-		{
-			"variable": "goldAmount",
-			"type": "declare",
-			"value": "100"
-		},
-		{
-			"variable": "health",
-			"type": "set",
-			"value": "100"
-		},
-		{
-			"type": "dialogue",
-			"text": "Your health is {$health}."
-		},
-		{
-			"response": [
-				{
-					"type": "dialogue",
-					"text": "    NPC: You chose {$goldAmount}."
-				},
-				{
-					"variable": "health",
-					"type": "set",
-					"value": "50"
-				}
-			],
-			"indent": 0,
-			"type": "choice",
-			"text": "Choice 1"
-		},
-		{
-			"response": [
-				{
-					"type": "dialogue",
-					"text": "    NPC: Your health is {$health}."
-				},
-				{
-					"type": "comment",
-					"text": " Test"
-				},
-				{
-					"condition": "$health > 50",
-					"type": "conditional",
-					"if_block": [
-						{
-							"type": "dialogue",
-							"text": "    You're doing well!"
-						}
-					],
-					"current_block": [
-						{
-							"type": "dialogue",
-							"text": "    You might want to heal up."
-						}
-					],
-					"else_block": [
-						{
-							"type": "dialogue",
-							"text": "    You might want to heal up."
-						}
-					]
-				}
-			],
-			"indent": 0,
-			"type": "choice",
-			"text": "Choice 2"
-		}
-	]
-}
+[
+	{
+		"title": "Start",
+		"content": [
+			{
+				"type": "dialogue",
+				"indent": 0,
+				"text": "Player: Hello, world!"
+			},
+			{
+				"variable": "goldAmount",
+				"type": "declare",
+				"indent": 0,
+				"value": "100"
+			},
+			{
+				"variable": "health",
+				"type": "set",
+				"indent": 0,
+				"value": "100"
+			},
+			{
+				"type": "dialogue",
+				"indent": 0,
+				"text": "Your health is {$health}."
+			},
+			{
+				"response": [
+					{
+						"type": "dialogue",
+						"indent": 4,
+						"text": "NPC: You chose {$goldAmount} gold."
+					},
+					{
+						"variable": "health",
+						"type": "set",
+						"indent": 4,
+						"value": "50"
+					}
+				],
+				"type": "choice",
+				"indent": 0,
+				"text": "Choice 1"
+			},
+			{
+				"response": [
+					{
+						"type": "dialogue",
+						"indent": 4,
+						"text": "NPC: Your health is {$health}."
+					}
+				],
+				"type": "choice",
+				"indent": 0,
+				"text": "Choice 2"
+			},
+			{
+				"type": "comment",
+				"indent": 0,
+				"text": " Test"
+			},
+			{
+				"condition": "$health > 50",
+				"indent": 0,
+				"type": "conditional",
+				"else_block": [
+					{
+						"type": "dialogue",
+						"indent": 4,
+						"text": "You might want to heal up."
+					}
+				],
+				"if_block": [
+					{
+						"type": "dialogue",
+						"indent": 4,
+						"text": "You're doing well!"
+					}
+				]
+			},
+			{
+				"target": "TEST",
+				"type": "jump",
+				"indent": 0
+			},
+			{
+				"type": "dialogue",
+				"indent": 0,
+				"text": "Jump does not work."
+			}
+		]
+	},
+	{
+		"title": "TEST",
+		"content": [
+			{
+				"type": "dialogue",
+				"indent": 0,
+				"text": "Jump does work."
+			}
+		]
+	}
+]
 ```
 
 Content objects can be of various types, including "dialogue", "choice", "conditional", "set", "declare", "jump", and "comment".
