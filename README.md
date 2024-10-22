@@ -233,6 +233,40 @@ For a detailed description of the Yarn syntax, please refer to [Yarn syntax desc
 
 ## Limitations
 
+- There is an issue with the Yarn parser's handling of if/else blocks and choices within them.
+  - In the wrong result, choices and their associated responses are being treated as separate items in the if_block:
+  ```lua
+  "if_block": [
+    {...},
+    {"type": "choice", "text": "Let's get wild.", "response": []},
+    {"type": "set", "indent": 5, ...},  // Should be part of "Let's get wild" response
+    {"type": "choice", "text": "Let's calm.", "response": []},
+    {"type": "dialogue", ...},  // Should be part of "Let's calm" response
+    {"type": "dialogue", ...}   // Should be part of "Let's calm" response
+	]
+  ```
+
+  - In the correct result, the responses are properly nested under their respective choices:
+  ```lua  
+  "if_block": [
+    {...},
+    {
+        "type": "choice",
+        "text": "Let's get wild.",
+        "response": [
+            {"type": "set", ...}
+        ]
+    },
+    {
+        "type": "choice",
+        "text": "Let's calm.",
+        "response": [
+            {"type": "dialogue", ...},
+            {"type": "dialogue", ...}
+        ]
+    }
+	]
+  ```
 - The parser assumes well-formed Yarn syntax. Malformed scripts may lead to unexpected results.
 - Complex nested structures (e.g., conditionals within choices within conditionals) may not be handled perfectly and might require additional processing.
 
