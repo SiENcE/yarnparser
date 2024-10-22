@@ -33,64 +33,81 @@ local function split_lines(str)
     return lines
 end
 
+-- Helper function to get indentation level
+local function get_indent_level(line)
+    local indent = line:match("^(%s*)")
+    return #indent
+end
+
 -- Parse a line of content
 local function parse_line(line)
+    local indent_level = get_indent_level(line)
+    
     if line:match("^%s*%-%>") then
         -- Choice
-        local indent = #(line:match("^(%s*)") or "")
         local choice_text = line:match("^%s*%-%>%s*(.+)")
-        return {type = "choice", text = choice_text, indent = indent, response = {}}
+        return {
+            type = "choice",
+            text = choice_text,
+            indent = indent_level,
+            response = {}
+        }
     elseif line:match("^%s*<<%s*set%s") then
         -- Variable assignment
         local var, value = line:match("<<set%s*$(.-)%s*to%s*(.-)%s*>>")
-        return {type = "set", variable = var, value = value}
+        return {type = "set", variable = var, value = value, indent = indent_level}
     elseif line:match("^%s*<<%s*if%s") then
         -- Start of conditional block
         local condition = line:match("<<if%s*(.-)%s*>>")
-        return {type = "conditional", condition = condition, if_block = {}, else_block = {}}
+        return {type = "conditional", condition = condition, if_block = {}, else_block = {}, indent = indent_level}
     elseif line:match("^%s*<<%s*jump%s") then
         -- Jump to another node
         local jump_to = line:match("<<jump%s*(.-)%s*>>")
-        return {type = "jump", target = jump_to}
+        return {type = "jump", target = jump_to, indent = indent_level}
     elseif line:match("^%s*<<%s*declare%s") then
         -- Variable declaration
         local var, value = line:match("<<declare%s*$(.-)%s*=%s*(.-)%s*>>")
-        return {type = "declare", variable = var, value = value}
+        return {type = "declare", variable = var, value = value, indent = indent_level}
     elseif line:match("^%s*//") then
         -- Single-line comment
-        return {type = "comment", text = line:match("^%s*//(.*)$")}
+        return {type = "comment", text = line:match("^%s*//(.*)$"), indent = indent_level}
     else
         -- Regular dialogue
-        return {type = "dialogue", text = line}
+        return {type = "dialogue", text = line:gsub("^%s+", ""), indent = indent_level}
     end
 end
 
--- Group choices, including nested choices
+-- Group choices with their indented content
 local function group_choices(content)
     local grouped_content = {}
-    local choice_stack = {}
-    local current_indent = 0
+    local current_choice = nil
+    local base_indent = 0
 
-    for _, item in ipairs(content) do
+    for i, item in ipairs(content) do
         if item.type == "choice" then
-            while #choice_stack > 0 and item.indent <= choice_stack[#choice_stack].indent do
-                table.remove(choice_stack)
+            if current_choice then
+                table.insert(grouped_content, current_choice)
             end
-
-            if #choice_stack == 0 then
-                table.insert(grouped_content, item)
-                table.insert(choice_stack, item)
-            else
-                table.insert(choice_stack[#choice_stack].response, item)
-                table.insert(choice_stack, item)
-            end
+            current_choice = item
+            base_indent = item.indent
         else
-            if #choice_stack > 0 then
-                table.insert(choice_stack[#choice_stack].response, item)
+            -- If we have a current choice and this line is indented more than the choice
+            if current_choice and item.indent > base_indent then
+                table.insert(current_choice.response, item)
             else
+                -- If we have a current choice, add it before adding the non-indented line
+                if current_choice then
+                    table.insert(grouped_content, current_choice)
+                    current_choice = nil
+                end
                 table.insert(grouped_content, item)
             end
         end
+    end
+
+    -- Add the last choice if there is one
+    if current_choice then
+        table.insert(grouped_content, current_choice)
     end
 
     return grouped_content
@@ -137,17 +154,17 @@ function YarnParser:parse(script)
                     table.insert(current_node.content, parsed)
                 elseif line:match("^%s*<<%s*else%s*>>") then
                     if #conditional_stack > 0 then
-                        conditional_stack[#conditional_stack].current_block = conditional_stack[#conditional_stack].else_block
+                        conditional_stack[#conditional_stack].current_target = conditional_stack[#conditional_stack].else_block
                     end
                 elseif line:match("^%s*<<%s*endif%s*>>") then
                     if #conditional_stack > 0 then
-                        local completed_conditional = table.remove(conditional_stack)
-                        completed_conditional.if_block = group_choices(completed_conditional.if_block)
-                        completed_conditional.else_block = group_choices(completed_conditional.else_block)
+                        table.remove(conditional_stack).current_target = nil
                     end
                 else
                     if #conditional_stack > 0 then
-                        table.insert(conditional_stack[#conditional_stack].current_block or conditional_stack[#conditional_stack].if_block, parsed)
+                        local current_conditional = conditional_stack[#conditional_stack]
+                        local target_block = current_conditional.current_target or current_conditional.if_block
+                        table.insert(target_block, parsed)
                     else
                         table.insert(current_node.content, parsed)
                     end
