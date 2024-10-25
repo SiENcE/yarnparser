@@ -1,0 +1,46 @@
+title: Start
+---
+Player: Hello, world!
+
+<<declare $goldAmount = 100>>
+<<set $health to 100>>
+Your health is {$health}.
+-> Choice 1: gold
+    NPC: You chose {$goldAmount} gold.
+    <<set $health to 50>>
+-> Choice 2: health
+    NPC: Your health is {$health}.
+    -> Level 2 Test
+        Level 2 works?
+        -> Level 3 Test
+            Level 3 works?
+        
+
+Do you see this line?
+// Test
+
+<<if $health > 50>>
+    You're doing well!
+    -> Let's get wild.
+        <<set $health to 80>>
+    -> Let's calm.
+        Good choice.
+        Stay tuned.
+        -> Like this!
+            Wow!
+        -> Or this!
+            Incredible!
+<<else>>
+    You might want to heal up.
+<<endif>>
+
+NPC: You have {$health} health.
+
+<<jump TEST>>
+
+Jump does not work.
+===
+title: TEST
+---
+Jump: Test.
+===

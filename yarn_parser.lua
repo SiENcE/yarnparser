@@ -24,7 +24,7 @@ SOFTWARE.
 
 local YarnParser = {}
 
--- Helper function to split a string into lines
+-- Split a string into lines
 local function split_lines(str)
     local lines = {}
     for line in str:gmatch("[^\r\n]+") do
@@ -33,7 +33,7 @@ local function split_lines(str)
     return lines
 end
 
--- Helper function to get indentation level
+-- Get indentation level
 local function get_indent_level(line)
     local indent = line:match("^(%s*)")
     return #indent
@@ -77,54 +77,139 @@ local function parse_line(line)
     end
 end
 
--- Group choices with their indented content
-local function group_choices(content)
-    local grouped_content = {}
+-- Recursive function to process content blocks that can contain nested choices and conditionals
+local function process_content_block(lines, start_index, base_indent)
+    local content = {}
     local current_choice = nil
-    local base_indent = 0
-
-    for i, item in ipairs(content) do
-        if item.type == "choice" then
-            if current_choice then
-                table.insert(grouped_content, current_choice)
-            end
-            current_choice = item
-            base_indent = item.indent
-        else
-            -- If we have a current choice and this line is indented more than the choice
-            if current_choice and item.indent > base_indent then
-                table.insert(current_choice.response, item)
-            else
-                -- If we have a current choice, add it before adding the non-indented line
-                if current_choice then
-                    table.insert(grouped_content, current_choice)
-                    current_choice = nil
-                end
-                table.insert(grouped_content, item)
+    local i = start_index
+    
+    while i <= #lines do
+        local line = lines[i]
+        local indent_level = get_indent_level(line)
+        
+        -- End conditions for recursive processing
+        if indent_level <= base_indent then
+            if line:match("^%s*<<%s*endif%s*>>") or 
+               line:match("^%s*<<%s*else%s*>>") or
+               line:match("^%s*===") then
+                break
             end
         end
+        
+        -- Parse the current line
+        if line:match("^%s*<<%s*if%s") then
+            local condition = line:match("<<if%s*(.-)%s*>>")
+            local conditional = {
+                type = "conditional",
+                condition = condition,
+                indent = indent_level,
+                if_block = {},
+                else_block = {}
+            }
+            
+            -- Process if block
+            local if_content, new_i = process_content_block(lines, i + 1, indent_level)
+            conditional.if_block = if_content
+            i = new_i
+            
+            -- Check for else block
+            if lines[i] and lines[i]:match("^%s*<<%s*else%s*>>") then
+                local else_content, new_i = process_content_block(lines, i + 1, indent_level)
+                conditional.else_block = else_content
+                i = new_i
+            end
+            
+            -- Add conditional to current context
+            if current_choice and indent_level > base_indent then
+                table.insert(current_choice.response, conditional)
+            else
+                if current_choice then
+                    table.insert(content, current_choice)
+                    current_choice = nil
+                end
+                table.insert(content, conditional)
+            end
+        elseif line:match("^%s*%-%>") then
+            -- Handle nested choices
+            if current_choice and indent_level > current_choice.indent then
+                -- This is a nested choice
+                local nested_choice = {
+                    type = "choice",
+                    text = line:match("^%s*%-%>%s*(.+)"),
+                    indent = indent_level,
+                    response = {}
+                }
+                
+                -- Process the nested choice's content
+                local j = i + 1
+                while j <= #lines do
+                    local next_line = lines[j]
+                    local next_indent = get_indent_level(next_line)
+                    
+                    if next_indent <= indent_level then
+                        break
+                    end
+                    
+                    if next_line:match("^%s*%-%>") then
+                        -- Found another choice at the same level
+                        break
+                    end
+                    
+                    local parsed = parse_line(next_line)
+                    table.insert(nested_choice.response, parsed)
+                    j = j + 1
+                end
+                
+                table.insert(current_choice.response, nested_choice)
+                i = j - 1
+            else
+                -- Start new top-level choice
+                if current_choice then
+                    table.insert(content, current_choice)
+                end
+                current_choice = {
+                    type = "choice",
+                    text = line:match("^%s*%-%>%s*(.+)"),
+                    indent = indent_level,
+                    response = {}
+                }
+            end
+        else
+            local parsed = parse_line(line)
+            if current_choice and indent_level > current_choice.indent then
+                table.insert(current_choice.response, parsed)
+            else
+                if current_choice then
+                    table.insert(content, current_choice)
+                    current_choice = nil
+                end
+                table.insert(content, parsed)
+            end
+        end
+        
+        i = i + 1
     end
-
-    -- Add the last choice if there is one
+    
+    -- Add final choice if exists
     if current_choice then
-        table.insert(grouped_content, current_choice)
+        table.insert(content, current_choice)
     end
-
-    return grouped_content
+    
+    return content, i
 end
 
--- Parse a Yarn script into nodes
+-- Modified main parse function
 function YarnParser:parse(script)
     local nodes = {}
     local current_node = nil
     local lines = split_lines(script)
-    local in_multiline_comment = false
-    local conditional_stack = {}
+    
+    local skiplines=0
+    for i, line in ipairs(lines) do
+        if i < skiplines then goto continue end
 
-    for _, line in ipairs(lines) do
         if line:match("^title:") then
             if current_node then
-                current_node.content = group_choices(current_node.content)
                 table.insert(nodes, current_node)
             end
             current_node = {
@@ -133,62 +218,34 @@ function YarnParser:parse(script)
             }
         elseif line == "===" then
             if current_node then
-                current_node.content = group_choices(current_node.content)
                 table.insert(nodes, current_node)
                 current_node = nil
             end
         elseif current_node and line ~= "---" then
-            if line:match("^%s*/%*") then
-                in_multiline_comment = true
-                table.insert(current_node.content, {type = "comment", text = line:match("^%s*/%*(.*)$")})
-            elseif line:match("%*/%s*$") then
-                in_multiline_comment = false
-                table.insert(current_node.content, {type = "comment", text = line:match("^(.*)%*/%s*$")})
-            elseif in_multiline_comment then
-                table.insert(current_node.content, {type = "comment", text = line})
-            else
-                local parsed = parse_line(line)
-                
-                if parsed.type == "conditional" then
-                    table.insert(conditional_stack, parsed)
-                    table.insert(current_node.content, parsed)
-                elseif line:match("^%s*<<%s*else%s*>>") then
-                    if #conditional_stack > 0 then
-                        conditional_stack[#conditional_stack].current_target = conditional_stack[#conditional_stack].else_block
-                    end
-                elseif line:match("^%s*<<%s*endif%s*>>") then
-                    if #conditional_stack > 0 then
-                        table.remove(conditional_stack).current_target = nil
-                    end
-                else
-                    if #conditional_stack > 0 then
-                        local current_conditional = conditional_stack[#conditional_stack]
-                        local target_block = current_conditional.current_target or current_conditional.if_block
-                        table.insert(target_block, parsed)
-                    else
-                        table.insert(current_node.content, parsed)
-                    end
-                end
+            if not current_node.content then
+                current_node.content = {}
             end
-        end
-    end
+			-- possibly wrong?
+--            current_node.content = process_content_block(lines, i, 0)
+            -- Skip to next node
+--            while skiplines <= #lines and lines[skiplines] ~= "===" do
+--                skiplines = skiplines + 1
+--            end
 
+			-- alternative
+            local block_content, new_i = process_content_block(lines, i, 0)
+            current_node.content = block_content
+            skiplines = new_i
+        end
+
+        ::continue::
+    end
+    
     if current_node then
-        current_node.content = group_choices(current_node.content)
         table.insert(nodes, current_node)
     end
-
+    
     return nodes
-end
-
--- Function to find the dialogue immediately preceding a choice group
-function YarnParser:find_preceding_dialogue(node, choice_group_index)
-    for i = choice_group_index - 1, 1, -1 do
-        if node.content and node.content[i].type == "dialogue" then
-            return node.content[i]
-        end
-    end
-    return nil
 end
 
 return YarnParser
