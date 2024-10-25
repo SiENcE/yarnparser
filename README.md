@@ -1,9 +1,11 @@
-# Yarn Parser
-A Yarn parser written in Lua to convert Yarn Spinner dialogues into Lua structures.
+# Yarn Parser & Interpreter
+A Yarn parser written in Lua to convert Yarn Spinner dialogues into Lua structures. There is also a [interpreter](yarn_interpreter.lua) to demonstrate how to interpret the parsed node structures.
 
 ## Overview
 
 This Lua module provides a parser for Yarn scripts, which are commonly used in interactive narrative games. The parser can handle various elements of Yarn syntax, including dialogue, choices, conditional statements, variable assignments, and commands.
+
+The supplied interpreter is only an example of how the parsed structure can be interpreted. You must adapt it or implement your own interpreter that meets your requirements.
 
 ## Features
 
@@ -17,9 +19,11 @@ This Lua module provides a parser for Yarn scripts, which are commonly used in i
   - Comments (single-line and multi-line)
 - Grouping of related content (e.g., choices and their responses)
 - Ability to find dialogue preceding choice groups
+- Sample interpreter with callbacks to run the dialogues.
 
-## Usage
+## Usage Sample
 
+main.lua
 ```lua
 local YarnParser = require("yarn_parser")
 
@@ -31,19 +35,13 @@ Player: Hello, world!
 <<declare $goldAmount = 100>>
 <<set $health to 100>>
 Your health is {$health}.
--> Choose gold, instead of health.
+-> Choice 1: gold
     NPC: You chose {$goldAmount} gold.
     <<set $health to 50>>
--> Choose health.
+-> Choice 2: health
     NPC: Your health is {$health}.
 
-// Test
-
-<<if $health > 50>>
-    You're doing well!
-<<else>>
-    You might want to heal up.
-<<endif>>
+NPC: You have {$health} health.
 
 <<jump TEST>>
 
@@ -51,7 +49,7 @@ Jump does not work.
 ===
 title: TEST
 ---
-Jump does work.
+Jump: Test.
 ===
 ]]
 
@@ -107,108 +105,81 @@ Parses a Yarn script and returns an array of node objects.
 - `script`: A string containing the entire Yarn script.
 - Returns: An array of parsed node objects.
 
-### YarnParser:find_preceding_dialogue(node, choice_group_index)
-
-Finds the dialogue immediately preceding a choice group within a node.
-
-- `node`: A parsed node object.
-- `choice_group_index`: The index of the choice group in the node's content.
-- Returns: The preceding dialogue object, or nil if not found.
-
 ## Node Structure
 
-Each parsed node has the following structure:
+Each parsed node has the following structure (exported json table):
 
-```lua
+```json
 [
 	{
 		"title": "Start",
 		"content": [
 			{
-				"type": "dialogue",
+				"text": "Player: Hello, world!",
 				"indent": 0,
-				"text": "Player: Hello, world!"
+				"type": "dialogue"
 			},
 			{
 				"variable": "goldAmount",
-				"type": "declare",
+				"value": "100",
 				"indent": 0,
-				"value": "100"
+				"type": "declare"
 			},
 			{
 				"variable": "health",
-				"type": "set",
+				"value": "100",
 				"indent": 0,
-				"value": "100"
+				"type": "set"
 			},
 			{
-				"type": "dialogue",
+				"text": "Your health is {$health}.",
 				"indent": 0,
-				"text": "Your health is {$health}."
+				"type": "dialogue"
 			},
 			{
 				"response": [
 					{
-						"type": "dialogue",
+						"text": "NPC: You chose {$goldAmount} gold.",
 						"indent": 4,
-						"text": "NPC: You chose {$goldAmount} gold."
+						"type": "dialogue"
 					},
 					{
 						"variable": "health",
-						"type": "set",
+						"value": "50",
 						"indent": 4,
-						"value": "50"
+						"type": "set"
 					}
 				],
-				"type": "choice",
+				"text": "Choice 1: gold",
 				"indent": 0,
-				"text": "Choice 1"
+				"type": "choice"
 			},
 			{
 				"response": [
 					{
-						"type": "dialogue",
+						"text": "NPC: Your health is {$health}.",
 						"indent": 4,
-						"text": "NPC: Your health is {$health}."
+						"type": "dialogue"
 					}
 				],
-				"type": "choice",
+				"text": "Choice 2: health",
 				"indent": 0,
-				"text": "Choice 2"
+				"type": "choice"
 			},
 			{
-				"type": "comment",
+				"text": "NPC: You have {$health} health.",
 				"indent": 0,
-				"text": " Test"
-			},
-			{
-				"condition": "$health > 50",
-				"indent": 0,
-				"type": "conditional",
-				"else_block": [
-					{
-						"type": "dialogue",
-						"indent": 4,
-						"text": "You might want to heal up."
-					}
-				],
-				"if_block": [
-					{
-						"type": "dialogue",
-						"indent": 4,
-						"text": "You're doing well!"
-					}
-				]
+				"type": "dialogue"
 			},
 			{
 				"target": "TEST",
-				"type": "jump",
-				"indent": 0
+				"indent": 0,
+				"type": "jump"
 			},
 			{
-				"type": "dialogue",
+				"text": "Jump does not work.",
 				"indent": 0,
-				"text": "Jump does not work."
+				"type": "dialogue"
 			}
 		]
 	},
@@ -216,9 +187,9 @@ Each parsed node has the following structure:
 		"title": "TEST",
 		"content": [
 			{
-				"type": "dialogue",
+				"text": "Jump: Test.",
 				"indent": 0,
-				"text": "Jump does work."
+				"type": "dialogue"
 			}
 		]
 	}
@@ -231,42 +202,100 @@ Content objects can be of various types, including "dialogue", "choice", "condit
 
 For a detailed description of the Yarn syntax, please refer to [Yarn syntax description](yarn_syntax.md).
 
+## Interpreter
+
+The included interpreter demonstrates how to run parsed Yarn scripts with callback support for various events.
+
+### Basic Usage
+
+```lua
+local YarnParser = require("yarn_parser")
+local YarnInterpreter = require("yarn_interpreter")
+
+-- Parse your Yarn script
+local nodes = YarnParser:parse(your_script)
+
+-- Create a new interpreter instance
+local interpreter = YarnInterpreter.new(nodes)
+
+-- Define callbacks
+local callbacks = {
+    on_dialogue = function(text)
+        print("Dialogue:", text)
+    end,
+    on_choice = function(choices, path)
+        print("Choice path:", path or "root")
+        for i, choice in ipairs(choices) do
+            print(i .. ": " .. choice)
+        end
+        io.write("Select (1-" .. #choices .. "): ")
+        return tonumber(io.read())
+    end,
+    on_variable = function(name, value)
+        print("Variable changed:", name, "=", value)
+    end,
+    on_node_enter = function(title)
+        print("Entering node:", title)
+    end,
+    on_node_exit = function(title)
+        print("Exiting node:", title)
+    end
+}
+
+-- Set the callbacks
+interpreter:set_callbacks(callbacks)
+
+-- Start the interpretation
+interpreter:run()
+```
+
+### Available Callbacks
+
+- `on_dialogue(text)`: Called when dialogue text is encountered
+- `on_choice(choices, path)`: Called when choices are presented. Must return the selected choice index
+- `on_variable(name, value)`: Called when a variable is set or declared
+- `on_node_enter(title)`: Called when entering a new node
+- `on_node_exit(title)`: Called when exiting a node
+
+### Variable Management
+
+The interpreter maintains its own variable state, but you can interact with it:
+
+```lua
+-- Get a variable value
+local value = interpreter:get_variable("health")
+
+-- Set a variable value
+interpreter:set_variable("health", 100)
+```
+
+### Handling Choices
+
+The `on_choice` callback receives:
+- An array of choice texts with variables already interpolated
+- A path string showing the hierarchy of nested choices (e.g., "Choice 1 > Nested Choice 2")
+
+The callback must return a number indicating the selected choice (1-based index).
+
+### Error Handling
+
+The interpreter will emit warnings (via print) when:
+- Invalid choices are selected
+- Jump targets are not found
+- Variables are undefined
+- Conditions cannot be evaluated
+
 ## Limitations
 
-- There is an issue with the Yarn parser's handling of if/else blocks and choices within them.
-  - In the wrong result, choices and their associated responses are being treated as separate items in the if_block:
-  ```lua
-  "if_block": [
-    {...},
-    {"type": "choice", "text": "Let's get wild.", "response": []},
-    {"type": "set", "indent": 5, ...},  // Should be part of "Let's get wild" response
-    {"type": "choice", "text": "Let's calm.", "response": []},
-    {"type": "dialogue", ...},  // Should be part of "Let's calm" response
-    {"type": "dialogue", ...}   // Should be part of "Let's calm" response
-	]
-  ```
+- The parser handles choices up from level 2 at the same level. Level 2 & 3 are put on the same level in the structure. Via ident you can still put them on a different level in your interpreter.
+Example: 
+-> Choice 2: health
+    NPC: Your health is {$health}.
+    -> Level 2 Test
+        Level 2 works?
+        -> Level 3 Test
+            Level 3 works?
 
-  - In the correct result, the responses are properly nested under their respective choices:
-  ```lua  
-  "if_block": [
-    {...},
-    {
-        "type": "choice",
-        "text": "Let's get wild.",
-        "response": [
-            {"type": "set", ...}
-        ]
-    },
-    {
-        "type": "choice",
-        "text": "Let's calm.",
-        "response": [
-            {"type": "dialogue", ...},
-            {"type": "dialogue", ...}
-        ]
-    }
-	]
-  ```
 - The parser assumes well-formed Yarn syntax. Malformed scripts may lead to unexpected results.
 - Complex nested structures (e.g., conditionals within choices within conditionals) may not be handled perfectly and might require additional processing.
 
