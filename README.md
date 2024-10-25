@@ -288,13 +288,15 @@ The interpreter will emit warnings (via print) when:
 ## Limitations
 
 - The parser handles choices up from level 2 at the same level. Level 2 & 3 are put on the same level in the structure. Via ident you can still put them on a different level in your interpreter.
-Example: 
+Test Sample:
+```
 -> Choice 2: health
     NPC: Your health is {$health}.
     -> Level 2 Test
         Level 2 works?
         -> Level 3 Test
             Level 3 works?
+```
 
 - The parser assumes well-formed Yarn syntax. Malformed scripts may lead to unexpected results.
 - Complex nested structures (e.g., conditionals within choices within conditionals) may not be handled perfectly and might require additional processing.
