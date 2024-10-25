@@ -287,7 +287,8 @@ The interpreter will emit warnings (via print) when:
 
 ## Limitations
 
-- The parser handles choices up from level 2 at the same level. Level 2 & 3 are put on the same level in the structure. Via ident you can still put them on a different level in your interpreter.
+- The parser treats choices at level 2 and above as being on the same level. In the structure, levels 2 and 3 are placed together. However, using indentation, you can still assign them different levels in your interpreter.
+
 Test Sample:
 ```
 -> Choice 2: health
