@@ -9,6 +9,7 @@ end
 local script = file:read("*all")
 file:close()
 
+-- Parse your Yarn script
 local parsed_nodes = YarnParser:parse(script)
 
 -- Create interpreter instance

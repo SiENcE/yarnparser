@@ -213,39 +213,38 @@ local YarnParser = require("yarn_parser")
 local YarnInterpreter = require("yarn_interpreter")
 
 -- Parse your Yarn script
-local nodes = YarnParser:parse(your_script)
+local parsed_nodes = YarnParser:parse(script)
 
--- Create a new interpreter instance
-local interpreter = YarnInterpreter.new(nodes)
+-- Create interpreter instance
+local interpreter = YarnInterpreter.new(parsed_nodes)
 
--- Define callbacks
-local callbacks = {
+-- OPTIONAL: Set up callbacks
+interpreter:set_callbacks({
     on_dialogue = function(text)
-        print("Dialogue:", text)
+        -- Custom dialogue display
+        print("[DIALOGUE] " .. text)
     end,
-    on_choice = function(choices, path)
-        print("Choice path:", path or "root")
+    on_choice = function(choices)
+        -- Custom choice handling
+        print("[CHOICE]")
         for i, choice in ipairs(choices) do
             print(i .. ": " .. choice)
         end
-        io.write("Select (1-" .. #choices .. "): ")
         return tonumber(io.read())
     end,
     on_variable = function(name, value)
-        print("Variable changed:", name, "=", value)
+        -- Variable change notification
+        print("[VARIABLE] " .. name .. " = " .. tostring(value))
     end,
     on_node_enter = function(title)
-        print("Entering node:", title)
+        print("[ENTER NODE] " .. title)
     end,
     on_node_exit = function(title)
-        print("Exiting node:", title)
+        print("[EXIT NODE] " .. title)
     end
-}
+})
 
--- Set the callbacks
-interpreter:set_callbacks(callbacks)
-
--- Start the interpretation
+-- Run the interpreter
 interpreter:run()
 ```
 
