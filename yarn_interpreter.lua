@@ -184,9 +184,9 @@ function YarnInterpreter:jump_to_node(target)
                 self.on_node_exit(self.current_node.title)
             end
             self.current_node = node
-            --if self.on_node_enter then
-            --    self.on_node_enter(node.title)
-            --end
+            if self.on_node_enter then
+                self.on_node_enter(node.title)
+            end
             return true
         end
     end
@@ -224,6 +224,9 @@ function YarnInterpreter:process_item(item)
         return false
     elseif item.type == "jump" then
         return self:jump_to_node(item.target)
+    elseif item.type == "comment" then
+        -- Simply ignore comments in the interpreter
+        return false
     end
     return false
 end

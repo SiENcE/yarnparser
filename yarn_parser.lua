@@ -198,15 +198,15 @@ local function process_content_block(lines, start_index, base_indent)
     return content, i
 end
 
--- Modified main parse function
+-- Main parse function
 function YarnParser:parse(script)
     local nodes = {}
     local current_node = nil
     local lines = split_lines(script)
     
-    local skiplines=0
-    for i, line in ipairs(lines) do
-        if i < skiplines then goto continue end
+    local i = 1
+    while i <= #lines do
+        local line = lines[i]
 
         if line:match("^title:") then
             if current_node then
@@ -221,24 +221,17 @@ function YarnParser:parse(script)
                 table.insert(nodes, current_node)
                 current_node = nil
             end
-        elseif current_node and line ~= "---" then
-            if not current_node.content then
-                current_node.content = {}
+        elseif current_node and line ~= "---" and line ~= "" then
+            if line ~= "---" and not line:match("^%s*$") then  -- Skip empty lines and "---"
+                if i > 1 and lines[i-1] == "---" then  -- Start processing content after "---"
+                    local block_content, new_i = process_content_block(lines, i, 0)
+                    current_node.content = block_content
+                    i = new_i - 1  -- Subtract 1 because the loop will increment i
+                end
             end
-			-- possibly wrong?
---            current_node.content = process_content_block(lines, i, 0)
-            -- Skip to next node
---            while skiplines <= #lines and lines[skiplines] ~= "===" do
---                skiplines = skiplines + 1
---            end
-
-			-- alternative
-            local block_content, new_i = process_content_block(lines, i, 0)
-            current_node.content = block_content
-            skiplines = new_i
         end
-
-        ::continue::
+        
+        i = i + 1
     end
     
     if current_node then
