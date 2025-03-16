@@ -14,7 +14,7 @@ local function print_content(content, indent)
             print(spaces(item.indent) .. "-> " .. item.text)
             print_content(item.response, indent .. "  ")
         elseif item.type == "set" then
-            print(spaces(item.indent) .. "Set: " .. item.variable .. " to " .. item.value)
+            print(spaces(item.indent) .. "Set: $" .. item.variable .. " to " .. item.value)
         elseif item.type == "conditional" then
             print(spaces(item.indent) .. "If: " .. item.condition)
             print(spaces(item.indent) .. "Then:")
@@ -26,7 +26,7 @@ local function print_content(content, indent)
         elseif item.type == "jump" then
             print(spaces(item.indent) .. "Jump to: " .. item.target)
         elseif item.type == "declare" then
-            print(spaces(item.indent) .. "Declare: " .. item.variable .. " = " .. item.value)
+            print(spaces(item.indent) .. "Declare: $" .. item.variable .. " = " .. item.value)
         elseif item.type == "comment" then
             print(spaces(item.indent) .. "Comment: " .. item.text)
         else
