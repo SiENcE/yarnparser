@@ -120,7 +120,7 @@ local function process_content_block(lines, start_index, base_indent)
             end
             
             -- Add conditional to current context
-            if current_choice and indent_level > base_indent then
+            if current_choice and indent_level > current_choice.indent then
                 table.insert(current_choice.response, conditional)
             else
                 if current_choice then
@@ -130,43 +130,79 @@ local function process_content_block(lines, start_index, base_indent)
                 table.insert(content, conditional)
             end
         elseif line:match("^%s*%-%>") then
-            -- Handle nested choices
-            if current_choice and indent_level > current_choice.indent then
-                -- This is a nested choice
-                local nested_choice = {
-                    type = "choice",
-                    text = line:match("^%s*%-%>%s*(.+)"),
-                    indent = indent_level,
-                    response = {}
-                }
+            -- New approach for handling choices and nested choices
+            if current_choice then
+                local choice_indent = current_choice.indent
                 
-                -- Process the nested choice's content
-                local j = i + 1
-                while j <= #lines do
-                    local next_line = lines[j]
-                    local next_indent = get_indent_level(next_line)
+                -- If this choice is at a deeper indentation than the current choice,
+                -- it's a nested choice that belongs under the current one
+                if indent_level > choice_indent then
+                    -- This is a nested choice - find the deepest level choice to attach to
+                    local parent_choice = current_choice
+                    local parent_responses = parent_choice.response
                     
-                    if next_indent <= indent_level then
-                        break
+                    -- Look for the most recently added choice at any level in the response
+                    local found_parent = false
+                    for j = #parent_responses, 1, -1 do
+                        local item = parent_responses[j]
+                        -- If we find a choice that's at a lesser indent than the current line,
+                        -- it could be a potential parent
+                        if item.type == "choice" and item.indent < indent_level then
+                            parent_choice = item
+                            parent_responses = parent_choice.response
+                            found_parent = true
+                            break
+                        end
                     end
                     
-                    if next_line:match("^%s*%-%>") then
-                        -- Found another choice at the same level
-                        break
+                    -- Parse the choice and add it to the appropriate parent
+                    local nested_choice = {
+                        type = "choice",
+                        text = line:match("^%s*%-%>%s*(.+)"),
+                        indent = indent_level,
+                        response = {}
+                    }
+                    
+                    -- Process the nested choice's content
+                    i = i + 1
+                    while i <= #lines do
+                        local next_line = lines[i]
+                        local next_indent = get_indent_level(next_line)
+                        
+                        if next_indent <= indent_level then
+                            break
+                        end
+                        
+                        if next_line:match("^%s*%-%>") then
+                            -- Found another choice - decide if it's a sibling or a child
+                            if next_indent > indent_level then
+                                -- This is a deeper nested choice, it'll be handled in the next iteration
+                                break
+                            else
+                                -- This is a sibling choice, exit the loop to process it separately
+                                break
+                            end
+                        end
+                        
+                        local parsed = parse_line(next_line)
+                        table.insert(nested_choice.response, parsed)
+                        i = i + 1
                     end
                     
-                    local parsed = parse_line(next_line)
-                    table.insert(nested_choice.response, parsed)
-                    j = j + 1
+                    table.insert(parent_responses, nested_choice)
+                    i = i - 1  -- Adjust i to correctly process the next line
+                else
+                    -- This is a new top-level choice
+                    table.insert(content, current_choice)
+                    current_choice = {
+                        type = "choice",
+                        text = line:match("^%s*%-%>%s*(.+)"),
+                        indent = indent_level,
+                        response = {}
+                    }
                 end
-                
-                table.insert(current_choice.response, nested_choice)
-                i = j - 1
             else
                 -- Start new top-level choice
-                if current_choice then
-                    table.insert(content, current_choice)
-                end
                 current_choice = {
                     type = "choice",
                     text = line:match("^%s*%-%>%s*(.+)"),
