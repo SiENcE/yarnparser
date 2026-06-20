@@ -34,6 +34,7 @@ function YarnInterpreter.new(nodes)
     self.on_dialogue = nil      -- Callback for dialogue events
     self.on_choice = nil        -- Callback for choice events
     self.on_variable = nil      -- Callback for variable changes
+    self.on_command = nil       -- Callback for generic commands
     self.on_node_enter = nil    -- Callback for node entry
     self.on_node_exit = nil     -- Callback for node exit
     return self
@@ -44,6 +45,7 @@ function YarnInterpreter:set_callbacks(callbacks)
     self.on_dialogue = callbacks.on_dialogue
     self.on_choice = callbacks.on_choice
     self.on_variable = callbacks.on_variable
+    self.on_command = callbacks.on_command
     self.on_node_enter = callbacks.on_node_enter
     self.on_node_exit = callbacks.on_node_exit
 end
@@ -67,33 +69,65 @@ function YarnInterpreter:interpolate_variables(text)
     end)
 end
 
--- Helper function to evaluate conditional expressions
-function YarnInterpreter:evaluate_condition(condition)
-    local var, op, value = condition:match("$(%w+)%s*([<>=]+)%s*(%d+)")
-    if var and op and value then
-        local num_value = tonumber(value)
-        if self.variables[var] == nil then
-            self:emit_warning("Variable " .. var .. " not initialized")
-            return false
-        end
-        
-        if op == "==" then
-            return self.variables[var] == num_value
-        elseif op == ">=" then
-            return self.variables[var] >= num_value
-        elseif op == "<=" then
-            return self.variables[var] <= num_value
-        elseif op == ">" then
-            return self.variables[var] > num_value
-        elseif op == "<" then
-            return self.variables[var] < num_value
-        elseif op == "!=" then
-            return self.variables[var] ~= num_value
-        end
+-- Evaluate a Yarn expression (used by conditionals and "set"/"declare" values).
+-- The expression is translated into a small, sandboxed Lua chunk so that the
+-- full range of Yarn operators is supported: comparison (> < >= <= == !=),
+-- boolean logic (and / or / not), arithmetic (+ - * /), parentheses, numbers,
+-- strings and boolean literals. Variable references ($name) resolve against the
+-- interpreter's variable table; undefined variables evaluate to nil.
+-- Returns the resulting value, or nil if the expression cannot be evaluated.
+function YarnInterpreter:evaluate_expression(expr)
+    if expr == nil then return nil end
+    expr = tostring(expr)
+
+    -- Yarn uses "!=" for inequality; Lua uses "~=".
+    local lua_expr = expr:gsub("!=", "~=")
+    -- Replace $variable references with a lookup into a private table.
+    lua_expr = lua_expr:gsub("%$([%a_][%w_]*)", '__vars["%1"]')
+
+    -- Sandbox: only the variable table is reachable; globals resolve to nil.
+    local env = setmetatable({__vars = self.variables}, {__index = function() return nil end})
+    local chunk = load("return (" .. lua_expr .. ")", "yarn_expr", "t", env)
+    if not chunk then
+        self:emit_warning("Unable to parse expression: " .. expr)
+        return nil
     end
-    
-    self:emit_warning("Unable to parse condition: " .. condition)
-    return false
+
+    local ok, result = pcall(chunk)
+    if not ok then
+        self:emit_warning("Unable to evaluate expression: " .. expr)
+        return nil
+    end
+    return result
+end
+
+-- Helper function to evaluate conditional expressions to a boolean
+function YarnInterpreter:evaluate_condition(condition)
+    local result = self:evaluate_expression(condition)
+    if result == nil then
+        self:emit_warning("Condition could not be evaluated (treated as false): " .. tostring(condition))
+        return false
+    end
+    return result and true or false
+end
+
+-- Coerce a parsed value string into a runtime value (number, boolean, string
+-- or the result of an expression such as "$gold - 10").
+function YarnInterpreter:coerce_value(value)
+    if value == nil then return nil end
+    local result = self:evaluate_expression(value)
+    if result ~= nil then return result end
+    -- Fall back to a literal number or the raw string.
+    return tonumber(value) or value
+end
+
+-- Resolve a "declare" value. Yarn allows declaring a type (Number/String/
+-- Boolean) with an implicit default, or an explicit initial value.
+function YarnInterpreter:declare_value(value)
+    if value == "Number" then return 0
+    elseif value == "String" then return ""
+    elseif value == "Boolean" then return false
+    else return self:coerce_value(value) end
 end
 
 -- Warning emission
@@ -120,6 +154,19 @@ end
 
 -- Handle nested choices with path tracking
 function YarnInterpreter:handle_nested_choices(choices, parent_path)
+    -- Conditional choices ("-> Option <<if $cond>>") are only presented when
+    -- their condition holds; the rest are filtered out before display.
+    local available = {}
+    for _, choice in ipairs(choices) do
+        if choice.condition == nil or self:evaluate_condition(choice.condition) then
+            available[#available + 1] = choice
+        end
+    end
+    choices = available
+    if #choices == 0 then
+        return false
+    end
+
     local choice_texts = {}
     for idx, choice in ipairs(choices) do
         choice_texts[idx] = self:interpolate_variables(choice.text)
@@ -210,10 +257,17 @@ function YarnInterpreter:process_item(item)
         self:emit_warning("Choice processed individually - this should not happen")
         return false
     elseif item.type == "set" then
-        self:set_variable(item.variable, tonumber(item.value) or item.value)
+        self:set_variable(item.variable, self:coerce_value(item.value))
         return false
     elseif item.type == "declare" then
-        self:set_variable(item.variable, tonumber(item.value) or item.value)
+        self:set_variable(item.variable, self:declare_value(item.value))
+        return false
+    elseif item.type == "command" then
+        if self.on_command then
+            self.on_command(item.name, item.args, item.raw)
+        else
+            print(item.raw or ("<<" .. tostring(item.name) .. ">>"))
+        end
         return false
     elseif item.type == "conditional" then
         if self:evaluate_condition(item.condition) then
@@ -272,13 +326,18 @@ end
 
 -- Main interpretation method
 function YarnInterpreter:run()
+    if not self.current_node then return end
+
+    -- Enter the starting node once. Subsequent nodes reached via <<jump>> are
+    -- entered (and the previous node exited) by jump_to_node, so we must not
+    -- re-fire on_node_enter here when continuing the loop after a jump.
+    if self.on_node_enter then
+        self.on_node_enter(self.current_node.title)
+    end
+
     while self.current_node do
-        if self.on_node_enter then
-            self.on_node_enter(self.current_node.title)
-        end
-        
         local jumped = self:process_content(self.current_node.content)
-        
+
         if not jumped then
             if self.on_node_exit then
                 self.on_node_exit(self.current_node.title)

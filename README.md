@@ -12,14 +12,15 @@ The supplied interpreter is only an example of how the parsed structure can be i
 - Parse Yarn scripts into structured node objects
 - Support for:
   - Dialogue lines
-  - Choices (including nested choices)
-  - Conditional statements (if/else)
+  - Choices (including **arbitrarily deep** nested choices)
+  - Conditional choices (`-> Option <<if $cond>>`)
+  - Conditional statements (`if` / `elseif` / `else` / `endif`)
   - Variable assignments, declarations, and interpolation
-  - Commands (including jump, set, declare)
-  - Comments (single-line and multi-line)
+  - Commands: built-in (`jump`, `set`, `declare`) and **generic** (`<<fade_up 1.0>>`, `<<camera ...>>`, ...)
+  - Comments (single-line `//` and multi-line `/* */`)
 - Grouping of related content (e.g., choices and their responses)
-- Ability to find dialogue preceding choice groups
-- Sample interpreter with callbacks to run the dialogues.
+- Robust against malformed input (non-string input, missing `---`/`===` delimiters, CRLF line endings, header tags)
+- Sample interpreter with callbacks to run the dialogues, a general expression evaluator for conditions/assignments, and conditional-choice filtering.
 
 ## Usage Sample
 
@@ -78,6 +79,8 @@ local function print_content(content, indent)
             print(indent .. "Declare: " .. item.variable .. " = " .. item.value)
         elseif item.type == "comment" then
             print(indent .. "Comment: " .. item.text)
+        elseif item.type == "command" then
+            print(indent .. "Command: " .. item.name .. (item.args and (" " .. item.args) or ""))
         else
             print(indent .. "Unknown type: " .. tostring(item.type))
         end
@@ -196,7 +199,11 @@ Each parsed node has the following structure (exported json table):
 ]
 ```
 
-Content objects can be of various types, including "dialogue", "choice", "conditional", "set", "declare", "jump", and "comment".
+Content objects can be of various types, including "dialogue", "choice", "conditional", "set", "declare", "jump", "command", and "comment".
+
+- A `choice` may also carry an optional `condition` field when written as `-> Option <<if $cond>>`.
+- A `command` (any `<<...>>` that isn't `set`/`declare`/`jump`) has `name`, optional `args`, and the original `raw` text.
+- `elseif` branches are represented as a nested `conditional` inside the parent's `else_block`, so an interpreter can evaluate the chain by simple recursion.
 
 ## Yarn Syntax
 
@@ -251,8 +258,9 @@ interpreter:run()
 ### Available Callbacks
 
 - `on_dialogue(text)`: Called when dialogue text is encountered
-- `on_choice(choices, path)`: Called when choices are presented. Must return the selected choice index
+- `on_choice(choices, path)`: Called when choices are presented. Must return the selected choice index. Only choices whose condition holds are passed in (conditional choices that fail are filtered out automatically)
 - `on_variable(name, value)`: Called when a variable is set or declared
+- `on_command(name, args, raw)`: Called for generic commands (e.g. `<<fade_up 1.0>>`)
 - `on_node_enter(title)`: Called when entering a new node
 - `on_node_exit(title)`: Called when exiting a node
 
@@ -284,10 +292,43 @@ The interpreter will emit warnings (via print) when:
 - Variables are undefined
 - Conditions cannot be evaluated
 
+## Testing
+
+A self-contained, assertion-based test suite is provided in [`yarn_tests.lua`](yarn_tests.lua).
+Run it from the project root:
+
+```sh
+lua yarn_tests.lua
+```
+
+It exits with a non-zero status if any test fails (so it can be used in CI) and
+covers parsing (deep nesting, conditionals, conditional choices, commands,
+multi-line comments), robustness against malformed input, and the interpreter
+(expression evaluation, assignments, choice filtering, jumps).
+
+The original demonstration scripts [`yarn_parser_test.lua`](yarn_parser_test.lua)
+and [`yarn_interpreter_test.lua`](yarn_interpreter_test.lua) are still available
+as runnable, human-readable examples.
+
 ## Limitations
 
-- The parser assumes well-formed Yarn syntax. Malformed scripts may lead to unexpected results.
-- Complex nested structures (e.g., conditionals within choices within conditionals) may not be handled perfectly and might require additional processing.
+- **Multi-line comments** (`/* */`) are not part of the official Yarn Spinner
+  syntax; they are a convenience extension of this parser.
+- The expression evaluator in the *sample* interpreter compiles conditions to a
+  sandboxed Lua chunk. It covers the common Yarn operators (comparison, boolean
+  logic, arithmetic, string/boolean literals) but is not a complete
+  reimplementation of Yarn Spinner's expression language (e.g. built-in
+  functions like `visited()` or `dice()` are not provided). Implement your own
+  interpreter for the full feature set.
+- The parser focuses on structure. Inline markup/attributes (e.g.
+  `[b]...[/b]`, `#line:tags`) are preserved verbatim inside dialogue text rather
+  than parsed into separate fields.
+
+> Earlier versions could not handle deeply nested structures or malformed input
+> reliably. The parser now uses an indentation-aware recursive descent that
+> supports arbitrarily deep nesting (choices within conditionals within
+> choices, etc.) and tolerates missing delimiters, non-string input and CRLF
+> line endings.
 
 ## Author
 

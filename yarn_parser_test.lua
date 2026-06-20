@@ -11,7 +11,8 @@ local function print_content(content, indent)
         if item.type == "dialogue" then
             print(spaces(item.indent) .. item.text)
         elseif item.type == "choice" then
-            print(spaces(item.indent) .. "-> " .. item.text)
+            local suffix = item.condition and ("  <<if " .. item.condition .. ">>") or ""
+            print(spaces(item.indent) .. "-> " .. item.text .. suffix)
             print_content(item.response, indent .. "  ")
         elseif item.type == "set" then
             print(spaces(item.indent) .. "Set: $" .. item.variable .. " to " .. item.value)
@@ -29,6 +30,8 @@ local function print_content(content, indent)
             print(spaces(item.indent) .. "Declare: $" .. item.variable .. " = " .. item.value)
         elseif item.type == "comment" then
             print(spaces(item.indent) .. "Comment: " .. item.text)
+        elseif item.type == "command" then
+            print(spaces(item.indent) .. "Command: " .. item.name .. (item.args and (" " .. item.args) or ""))
         else
             print(spaces(item.indent) .. "Unknown type: " .. tostring(item.type))
         end
